@@ -9,7 +9,6 @@ import colorama
 colorama.init(autoreset=True)
 
 # ANSI escape codes for formatting
-# Changed from underline (\033[4m) to red background highlight (\033[41m)
 HIGHLIGHT_COLOR = '\033[41m'  # Red Background Highlight
 RESET_COLOR = '\033[0m'
 
@@ -78,14 +77,14 @@ def format_results_for_console(results, search_words):
             output_lines.append(f"\n📄 Found in: {filename}")
             for word in search_words:
                 if word in words_found:
-                    output_lines.append(f"\n   - Word: '{word}'")
+                    count = len(words_found[word])
+                    output_lines.append(f"\n   - Word: '{word}' (Found {count} times)")
                     sorted_matches = sorted(list(set(words_found[word])), key=lambda x: (x[0], x[1]))
                     for page, line, before, match_line, after in sorted_matches:
                         output_lines.append(f"     > Page {page}, Line {line}:")
                         if before:
                             output_lines.append(f"       {before}")
                         
-                        # Highlight the word in the context line
                         highlighted_line = highlight_word_in_text(match_line, word)
                         output_lines.append(f"     >>> {highlighted_line}")
                         
@@ -125,7 +124,7 @@ def run_search(target_path, search_words):
             return f"No PDF files found in the folder: {target_path}"
     else:
         return f"Error: The path '{target_path}' does not exist or is not a valid file/directory."
-    
+
     return format_results_for_console(final_results, search_words)
 
 if __name__ == "__main__":
