@@ -4,20 +4,28 @@ import argparse
 from PyPDF2 import PdfReader
 
 def search_in_file(file_path, search_words):
-    """Searches for words in a single PDF file and returns the results."""
+    """Searches for words in a single PDF file and returns the results with context."""
     search_words_lower = [word.lower() for word in search_words]
+    # Store results as: {word: [list_of_matching_lines]}
     found_in_file = {}
 
     try:
         reader = PdfReader(file_path)
         for page_num, page in enumerate(reader.pages):
             text = page.extract_text() or ""
-            text_lower = text.lower()
-            for word in search_words_lower:
-                if re.search(rf'\b{re.escape(word)}\b', text_lower):
-                    if word not in found_in_file:
-                        found_in_file[word] = []
-                    found_in_file[word].append(page_num + 1)
+            # Split the entire page text into individual lines
+            lines = text.split('\n')
+            
+            for line in lines:
+                line_lower = line.lower()
+                for word in search_words_lower:
+                    # Use regular expression to find whole words
+                    if re.search(rf'\b{re.escape(word)}\b', line_lower):
+                        if word not in found_in_file:
+                            found_in_file[word] = []
+                        # Store the line, stripping extra whitespace
+                        found_in_file[word].append(line.strip())
+                        
     except Exception as e:
         # We will let the calling function handle the error message
         raise Exception(f"Could not read or process file. Reason: {e}")
@@ -25,22 +33,26 @@ def search_in_file(file_path, search_words):
     return found_in_file
 
 def display_results(results):
-    """Prints the final search results in a clean format."""
+    """Prints the final search results with context lines."""
     print("\n===== SEARCH RESULTS =====")
     if not results:
         print("No matching words found.")
     else:
         for filename, words_found in results.items():
             print(f"\n📄 Found in: {filename}")
-            for word, pages in words_found.items():
-                page_list_str = ", ".join(map(str, sorted(pages)))
-                print(f"   - '{word}' on page(s): {page_list_str}")
+            for word, lines in words_found.items():
+                print(f"\n   - Word: '{word}'")
+                # Use a set to automatically remove duplicate lines if a word appears multiple times on one line
+                unique_lines = sorted(list(set(lines)))
+                for line in unique_lines:
+                    # Indent the context line for readability
+                    print(f"     > {line}")
     print("========================\n")
 
 if __name__ == "__main__":
     # --- Set up command-line argument parser ---
     parser = argparse.ArgumentParser(
-        description="Search for specific words in a PDF file or all PDFs in a folder.",
+        description="Search for specific words in a PDF file or all PDFs in a folder and show the surrounding text.",
         epilog="Examples:\n" \
                "  # Search a folder:\n" \
                "  python pdf_searcher.py /path/to/folder \"Epstein\" \"Trump\"\n" \
@@ -63,7 +75,6 @@ if __name__ == "__main__":
             try:
                 file_results = search_in_file(target_path, search_words)
                 if file_results:
-                    # Use only the filename for cleaner output
                     filename = os.path.basename(target_path)
                     final_results[filename] = file_results
             except Exception as e:

@@ -2,6 +2,7 @@
 
 
 
+
 # nerd-search
 
 A Python script for searching specific words or phrases in a single PDF file or all PDF files within a folder.
@@ -49,6 +50,20 @@ python nerd-search.py ./pdfs/document.pdf "Epstein" "Trump"
 ## License
 
 MIT License
+
+---
+
+
+## Change Log
+
+
+### 2025-12-24
+
+- Added support for searching both a single PDF file and all PDFs in a folder
+- Improved error handling and output formatting
+- Updated usage instructions and examples
+- Modularized code for easier maintenance
+- Now displays the line(s) where the search text is found in the summary output
 
 ---
 
