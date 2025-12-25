@@ -81,6 +81,15 @@ if __name__ == "__main__":
     parser.add_argument("words", nargs='+', help="One or more words to search for (space-separated). Use quotes for phrases.")
     args = parser.parse_args()
 
+    # --- NEW: Check for correct number of arguments for a friendly error message ---
+    # If only one argument is given (e.g., just the filename), it's likely a mistake.
+    # We check if the second argument (the first word) exists.
+    if not hasattr(args, 'words') or not args.words:
+        print("\n[!] Missing search words.")
+        print("You must provide at least one word to search for.\n")
+        parser.print_help()
+        exit() # Exit the script
+
     target_path = args.path
     search_words = args.words
     final_results = {}
