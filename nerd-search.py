@@ -4,40 +4,91 @@ import argparse
 import sys
 from PyPDF2 import PdfReader
 import colorama
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-# --- Initialize colorama for cross-platform formatting ---
+# --- Initialize colorama for cross-platform formatting (for console output) ---
 colorama.init(autoreset=True)
 
-# --- ANSI escape codes for formatting ---
-HIGHLIGHT_COLOR = '\033[41m'  # Red Background Highlight
-RESET_COLOR = '\033[0m'
+# --- ANSI escape codes for console formatting ---
+ANSI_HIGHLIGHT_COLOR = '\033[41m'  # Red Background Highlight
+ANSI_RESET_COLOR = '\033[0m'
 
-def search_in_file(file_path, search_words, case_sensitive, whole_word, use_regex):
-    """Searches for words in a single PDF file.
-    Returns a dictionary of results or a special message for scanned files.
-    """
+# --- CSS and HTML for HTML export ---
+HTML_STYLES = """
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #f4f4f9; color: #333; margin: 20px; }
+    h1, h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+    .container { max-width: 900px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .file-section { margin-bottom: 25px; border: 1px solid #e0e0e0; padding: 15px; border-radius: 5px; }
+    .file-title { font-size: 1.5em; font-weight: bold; color: #2980b9; }
+    .file-summary { font-style: italic; color: #555; margin-top: 5px; }
+    .word-section { margin-top: 15px; }
+    .word-title { font-size: 1.2em; font-weight: bold; color: #c0392b; }
+    .match { margin-left: 20px; margin-bottom: 10px; }
+    .match-details { font-family: 'Courier New', Courier, monospace; background-color: #ecf0f1; padding: 10px; border-radius: 4px; white-space: pre-wrap; border-left: 4px solid #3498db; }
+    .highlight { background-color: #ffcccc; font-weight: bold; padding: 2px 4px; border-radius: 3px; }
+    .error, .skipped { color: #e74c3c; font-weight: bold; }
+    .quiet-list li { background-color: #eafaf1; padding: 8px; margin-bottom: 5px; list-style-type: none; border-radius: 4px; }
+</style>
+"""
+
+# --- Utility Functions ---
+
+def strip_ansi_codes(text):
+    """Removes ANSI escape codes from a string."""
+    return re.sub(r'\x1b$$[0-9;]*m', '', text)
+
+def count_total_pages(pdf_files):
+    """Counts the total number of pages across all PDF files to be processed."""
+    total_pages = 0
+    print("Counting pages for progress bar...")
+    for file_path in tqdm(pdf_files, desc="Scanning files"):
+        try:
+            reader = PdfReader(file_path)
+            total_pages += len(reader.pages)
+        except Exception:
+            continue
+    return total_pages
+
+def find_pdf_files(directory, recursive, exclude_patterns):
+    """Generates a list of PDF file paths, respecting exclusion and recursion options."""
+    pdf_files = []
+    if recursive:
+        for root, _, files in os.walk(directory):
+            for filename in files:
+                if filename.lower().endswith('.pdf'):
+                    file_path = os.path.join(root, filename)
+                    if not any(re.search(pattern, filename) for pattern in exclude_patterns):
+                        pdf_files.append(file_path)
+    else:
+        for filename in os.listdir(directory):
+            if filename.lower().endswith('.pdf'):
+                file_path = os.path.join(directory, filename)
+                if not any(re.search(pattern, filename) for pattern in exclude_patterns):
+                    pdf_files.append(file_path)
+    return pdf_files
+
+# --- Core Search Logic ---
+
+def search_in_file(file_path, search_words, case_sensitive, whole_word, use_regex, pbar):
+    """Searches for words in a single PDF file and updates the progress bar."""
     try:
         reader = PdfReader(file_path)
         if not reader.pages:
-            return None # Skip empty files
+            return None
 
-        # Basic check for scanned image PDFs
         first_page_text = reader.pages[0].extract_text() or ""
         if len(first_page_text.strip()) < 50:
+            pbar.update(len(reader.pages))
             return {"_is_scanned_": ["This PDF appears to be a scanned image and contains no extractable text."]}
 
-        # Build search patterns based on user options
         search_patterns = {}
         flags = 0 if case_sensitive else re.IGNORECASE
         
         for word in search_words:
             if use_regex:
-                # User-provided regex, no escaping or word boundaries
                 search_patterns[word] = re.compile(word, flags=flags)
             else:
-                # Normal word search, with escaping and optional word boundaries
                 escaped_word = re.escape(word)
                 pattern_str = rf'\b{escaped_word}\b' if whole_word else escaped_word
                 search_patterns[word] = re.compile(pattern_str, flags=flags)
@@ -59,34 +110,47 @@ def search_in_file(file_path, search_words, case_sensitive, whole_word, use_rege
                         found_in_file[word].append(
                             (page_num + 1, line_index + 1, context_before, context_line, context_after)
                         )
+            
+            pbar.update(1)
+
         return found_in_file if found_in_file else None
 
     except Exception as e:
-        # Return error as a string to be handled by the main thread
+        try:
+            reader = PdfReader(file_path)
+            pbar.update(len(reader.pages))
+        except:
+            pbar.update(1)
         return f"Could not read or process file. Reason: {e}"
 
-def highlight_word_in_text(text, word, use_regex):
-    """Highlights all occurrences of a word in a text."""
+# --- Output Formatters ---
+
+def highlight_word_in_text(text, word, use_regex, for_html=False):
+    """Highlights a word in text, either with ANSI codes or HTML span."""
     if use_regex:
-        # For regex, we can't easily reconstruct the word to highlight
-        # So we will not highlight if regex is used to avoid complex matching.
         return text
     
-    return re.sub(
-        rf'({re.escape(word)})',
-        lambda match: f"{HIGHLIGHT_COLOR}{match.group(1)}{RESET_COLOR}",
-        text,
-        flags=re.IGNORECASE
-    )
-
-def strip_ansi_codes(text):
-    """Removes ANSI escape codes from a string."""
-    return re.sub(r'\x1b$$[0-9;]*m', '', text)
+    escaped_word = re.escape(word)
+    if for_html:
+        # For HTML, wrap in a span with a class
+        return re.sub(
+            rf'({escaped_word})',
+            r'<span class="highlight">\1</span>',
+            text,
+            flags=re.IGNORECASE
+        )
+    else:
+        # For console, use ANSI codes
+        return re.sub(
+            rf'({escaped_word})',
+            lambda match: f"{ANSI_HIGHLIGHT_COLOR}{match.group(1)}{ANSI_RESET_COLOR}",
+            text,
+            flags=re.IGNORECASE
+        )
 
 def format_results_for_console(results, search_words, quiet_mode, use_regex):
-    """Formats the full result dictionary into a clean, multi-line string for console output."""
+    """Formats results for console output with ANSI highlighting."""
     if quiet_mode:
-        # In quiet mode, only print filenames with matches
         output_lines = [filename for filename, data in results.items() if data and not isinstance(data, str)]
         return "\n".join(output_lines)
 
@@ -102,8 +166,6 @@ def format_results_for_console(results, search_words, quiet_mode, use_regex):
                 continue
 
             output_lines.append(f"\n📄 Found in: {filename}")
-            
-            # Calculate and display total counts for the file
             total_occurrences = sum(len(matches) for matches in file_data.values())
             unique_words_found = len(file_data)
             output_lines.append(f"   -> Total: {total_occurrences} occurrences of {unique_words_found} unique words.")
@@ -113,44 +175,70 @@ def format_results_for_console(results, search_words, quiet_mode, use_regex):
                     matches = file_data[word]
                     count = len(matches)
                     output_lines.append(f"\n   - Word: '{word}' (Found {count} times)")
-                    
-                    # Use a set to remove duplicate line occurrences
                     sorted_matches = sorted(list(set(matches)), key=lambda x: (x[0], x[1]))
                     for page, line, before, match_line, after in sorted_matches:
                         output_lines.append(f"     > Page {page}, Line {line}:")
-                        if before:
-                            output_lines.append(f"       {before}")
-                        
-                        highlighted_line = highlight_word_in_text(match_line, word, use_regex)
+                        if before: output_lines.append(f"       {before}")
+                        highlighted_line = highlight_word_in_text(match_line, word, use_regex, for_html=False)
                         output_lines.append(f"     >>> {highlighted_line}")
-                        
-                        if after:
-                            output_lines.append(f"       {after}")
+                        if after: output_lines.append(f"       {after}")
                         output_lines.append("-" * 20)
     output_lines.append("========================\n")
     return "\n".join(output_lines)
 
-def find_pdf_files(directory, recursive, exclude_patterns):
-    """Generates a list of PDF file paths, respecting exclusion and recursion options."""
-    pdf_files = []
-    if recursive:
-        for root, _, files in os.walk(directory):
-            for filename in files:
-                if filename.lower().endswith('.pdf'):
-                    file_path = os.path.join(root, filename)
-                    if not any(re.search(pattern, filename) for pattern in exclude_patterns):
-                        pdf_files.append(file_path)
+def format_results_for_html(results, search_words, quiet_mode, use_regex):
+    """Formats results for HTML output with CSS highlighting. All tags are properly closed."""
+    html_parts = [f"<html><head><title>Nerd-Search Results</title>{HTML_STYLES}</head><body>"]
+    html_parts.append('<div class="container"><h1>Nerd-Search Results</h1>')
+
+    if not results:
+        html_parts.append("<p>No matching words found in any files.</p>")
     else:
-        for filename in os.listdir(directory):
-            if filename.lower().endswith('.pdf'):
-                file_path = os.path.join(directory, filename)
-                if not any(re.search(pattern, filename) for pattern in exclude_patterns):
-                    pdf_files.append(file_path)
-    return pdf_files
+        for filename, file_data in results.items():
+            html_parts.append('<div class="file-section">')
+
+            if isinstance(file_data, str) or not file_data:
+                status = "error" if isinstance(file_data, str) else "skipped"
+                message = file_data if isinstance(file_data, str) else "No matches found."
+                html_parts.append(f'<p class="{status}">File: {filename} - {message}</p>')
+                html_parts.append('</div>') # Close file-section
+                continue
+
+            html_parts.append(f'<div class="file-title">📄 {filename}</div>')
+            total_occurrences = sum(len(matches) for matches in file_data.values())
+            unique_words_found = len(file_data)
+            html_parts.append(f'<div class="file-summary">Total: {total_occurrences} occurrences of {unique_words_found} unique words.</div>')
+
+            for word in search_words:
+                if word in file_data:
+                    matches = file_data[word]
+                    count = len(matches)
+                    html_parts.append(f'<div class="word-section">')
+                    html_parts.append(f'<div class="word-title">Word: \'{word}\' (Found {count} times)</div>')
+                    
+                    sorted_matches = sorted(list(set(matches)), key=lambda x: (x[0], x[1]))
+                    for page, line, before, match_line, after in sorted_matches:
+                        html_parts.append('<div class="match">')
+                        html_parts.append(f'<strong>Page {page}, Line {line}:</strong>')
+                        
+                        context_parts = []
+                        if before: context_parts.append(before.strip())
+                        if match_line: context_parts.append(highlight_word_in_text(match_line, word, use_regex, for_html=True))
+                        if after: context_parts.append(after.strip())
+                        
+                        full_context = "\n".join(context_parts)
+                        html_parts.append(f'<div class="match-details">{full_context}</div>')
+                        html_parts.append('</div>') # Close match
+                    html_parts.append('</div>') # Close word-section
+            html_parts.append('</div>') # Close file-section
+
+    html_parts.append('</div></body></html>')
+    return "".join(html_parts)
+
+# --- Main Execution ---
 
 def run_search(target_path, args):
-    """Main function to orchestrate the search using parallel processing."""
-    final_results = {}
+    """Main function to orchestrate the search."""
     pdf_files_to_process = []
 
     if os.path.isfile(target_path):
@@ -165,39 +253,27 @@ def run_search(target_path, args):
     else:
         return f"Error: The path '{target_path}' does not exist or is not a valid file/directory."
 
-    # Use ThreadPoolExecutor for parallel processing
-    with ThreadPoolExecutor() as executor:
-        # Submit all search tasks to the executor
-        future_to_filename = {
-            executor.submit(
-                search_in_file, 
-                file_path, 
-                args.words, 
-                args.case_sensitive, 
-                args.whole_word, 
-                args.regex
-            ): os.path.basename(file_path)
-            for file_path in pdf_files_to_process
-        }
+    total_pages = count_total_pages(pdf_files_to_process)
+    if total_pages == 0:
+        print("No pages found to search in the provided PDFs.")
+        return "No pages found to search."
+    
+    final_results = {}
+    with tqdm(total=total_pages, desc="Processing Pages", unit="page") as pbar:
+        for file_path in pdf_files_to_process:
+            filename = os.path.basename(file_path)
+            result = search_in_file(file_path, args.words, args.case_sensitive, args.whole_word, args.regex, pbar)
+            if result:
+                final_results[filename] = result
 
-        # Use tqdm to display a progress bar as tasks complete
-        for future in tqdm(as_completed(future_to_filename), total=len(pdf_files_to_process), desc="Searching PDFs"):
-            filename = future_to_filename[future]
-            try:
-                result = future.result()
-                if result:
-                    final_results[filename] = result
-            except Exception as e:
-                final_results[filename] = f"An unexpected error occurred: {e}"
-
-    return format_results_for_console(final_results, args.words, args.quiet, args.regex)
+    return final_results
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Nerd-Search: Find words in PDFs with context and advanced options.",
         epilog="Examples:\n" \
-               "  python nerd-search.py /path/to/folder \"Epstein\" \"Trump\" -o results.txt\n" \
+               "  python nerd-search.py /path/to/folder \"Epstein\" \"Trump\" --html-output results.html\n" \
                "  python nerd-search.py /path/to/file.pdf \"yacht\" --case-sensitive\n" \
                "  python nerd-search.py /path/to/logs --recursive --regex \"error \\d{4}\""
     )
@@ -213,9 +289,11 @@ if __name__ == "__main__":
     parser.add_argument("--recursive", action='store_true', help="Search recursively in subdirectories.")
     parser.add_argument("--exclude", nargs='*', default=[], help="Exclude files matching these regex patterns (e.g., '*glossary*').")
 
-    # Output options
-    parser.add_argument("-o", "--output", metavar="FILE", help="Save results to a file instead of printing to console.")
-    parser.add_argument("-q", "--quiet", action='store_true', help="Quiet mode. Only show filenames with matches.")
+    # Output options (mutually exclusive)
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument("-o", "--output", metavar="FILE", help="Save results to a plain text file.")
+    output_group.add_argument("--html-output", metavar="FILE", help="Save results to a styled HTML file.")
+    parser.add_argument("-q", "--quiet", action='store_true', help="Quiet mode. Only show filenames with matches (affects console output).")
 
     args = parser.parse_args()
 
@@ -225,16 +303,28 @@ if __name__ == "__main__":
         exit()
 
     print(f"Searching: {args.path}\n")
-    results_string = run_search(args.path, args)
+    results_data = run_search(args.path, args)
 
-    if args.output:
-        # Strip ANSI codes for clean text file output
-        clean_results = strip_ansi_codes(results_string)
+    # --- Output Handling ---
+    if args.html_output:
+        html_string = format_results_for_html(results_data, args.words, args.quiet, args.regex)
+        try:
+            with open(args.html_output, 'w', encoding='utf-8') as f:
+                f.write(html_string)
+            print(f"\nResults successfully saved to {args.html_output}")
+        except IOError as e:
+            print(f"\n[!] Error writing to HTML file: {e}", file=sys.stderr)
+
+    elif args.output:
+        text_string = format_results_for_console(results_data, args.words, args.quiet, args.regex)
+        clean_text = strip_ansi_codes(text_string)
         try:
             with open(args.output, 'w', encoding='utf-8') as f:
-                f.write(clean_results)
+                f.write(clean_text)
             print(f"\nResults successfully saved to {args.output}")
         except IOError as e:
-            print(f"\n[!] Error writing to file: {e}", file=sys.stderr)
+            print(f"\n[!] Error writing to text file: {e}", file=sys.stderr)
+            
     else:
-        print(results_string)
+        console_string = format_results_for_console(results_data, args.words, args.quiet, args.regex)
+        print(console_string)
