@@ -3,9 +3,31 @@
 
 
 
+
 # nerd-search
 
-A Python script for searching specific words or phrases in a single PDF file or all PDF files within a folder.
+**Summary:**
+
+`nerd-search` is a Python script for searching specific words or phrases in a single PDF file or all PDF files within a folder. It reports the exact page and line number for each match, and handles scanned PDFs gracefully.
+
+---
+
+## Key Changes and How They Work
+
+- **Storing More Data:**
+	- In `search_in_file`, the script now stores a tuple `(page, line, text)` for each match, instead of just the text.
+		- `page_num + 1`: Page numbers start from 1 for user-friendly output.
+		- `line_num`: Uses `enumerate(lines, 1)` so line numbers start from 1.
+		- `line.strip()`: Stores the clean text of the line.
+- **Sorting for Clean Output:**
+	- In `display_results`, matches are deduplicated and sorted by page and line number:
+		- `set(matches)`: Removes duplicate matches.
+		- `sorted(..., key=lambda x: (x[0], x[1]))`: Sorts by page, then line.
+- **Displaying the New Info:**
+	- Output now clearly shows the page and line number before the text:
+		- Example: `> Page 2, Line 5: This is the matching line.`
+
+---
 
 ## Features
 
