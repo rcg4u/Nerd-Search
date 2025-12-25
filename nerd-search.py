@@ -1,4 +1,3 @@
-
 import os
 import re
 import argparse
@@ -8,7 +7,6 @@ def search_in_file(file_path, search_words):
     """Searches for words in a single PDF file and returns the results."""
     search_words_lower = [word.lower() for word in search_words]
     found_in_file = {}
-    filename = os.path.basename(file_path)
 
     try:
         reader = PdfReader(file_path)
@@ -21,28 +19,10 @@ def search_in_file(file_path, search_words):
                         found_in_file[word] = []
                     found_in_file[word].append(page_num + 1)
     except Exception as e:
-        print(f"  [!] Could not read or process {filename}. Reason: {e}")
+        # We will let the calling function handle the error message
+        raise Exception(f"Could not read or process file. Reason: {e}")
     
     return found_in_file
-
-def search_in_folder(folder_path, search_words):
-    """Searches for words in all PDFs within a folder and returns the results."""
-    all_results = {}
-    pdf_files_found = False
-
-    for filename in os.listdir(folder_path):
-        if filename.lower().endswith('.pdf'):
-            pdf_files_found = True
-            file_path = os.path.join(folder_path, filename)
-            print(f"--- Scanning: {filename} ---")
-            results = search_in_file(file_path, search_words)
-            if results:
-                all_results[filename] = results
-    
-    if not pdf_files_found:
-        print(f"No PDF files found in the folder: {folder_path}")
-        
-    return all_results
 
 def display_results(results):
     """Prints the final search results in a clean format."""
@@ -68,34 +48,49 @@ if __name__ == "__main__":
                "  python pdf_searcher.py /path/to/file.pdf \"yacht\""
     )
 
-    # Add the argument for the path (can be file or folder)
-    parser.add_argument(
-        "path", 
-        help="The path to a PDF file or a folder containing PDF files."
-    )
-    # Add the argument for the words to search
-    parser.add_argument(
-        "words", 
-        nargs='+',  # One or more words
-        help="One or more words to search for (space-separated). Use quotes for phrases."
-    )
-
+    parser.add_argument("path", help="The path to a PDF file or a folder containing PDF files.")
+    parser.add_argument("words", nargs='+', help="One or more words to search for (space-separated). Use quotes for phrases.")
     args = parser.parse_args()
 
     target_path = args.path
     search_words = args.words
+    final_results = {}
 
     # --- Determine if path is a file or a directory and run the search ---
     if os.path.isfile(target_path):
         if target_path.lower().endswith('.pdf'):
             print(f"Searching single file: {target_path}\n")
-            results = search_in_file(target_path, search_words)
-            display_results(results)
+            try:
+                file_results = search_in_file(target_path, search_words)
+                if file_results:
+                    # Use only the filename for cleaner output
+                    filename = os.path.basename(target_path)
+                    final_results[filename] = file_results
+            except Exception as e:
+                print(f"  [!] Error processing {os.path.basename(target_path)}. {e}")
         else:
             print(f"Error: The file '{target_path}' is not a PDF.")
+            
     elif os.path.isdir(target_path):
         print(f"Searching in folder: {target_path}\n")
-        results = search_in_folder(target_path, search_words)
-        display_results(results)
+        pdf_files_found = False
+        for filename in os.listdir(target_path):
+            if filename.lower().endswith('.pdf'):
+                pdf_files_found = True
+                file_path = os.path.join(target_path, filename)
+                print(f"--- Scanning: {filename} ---")
+                try:
+                    file_results = search_in_file(file_path, search_words)
+                    if file_results:
+                        final_results[filename] = file_results
+                except Exception as e:
+                    print(f"  [!] Error processing {filename}. {e}")
+
+        if not pdf_files_found:
+            print(f"No PDF files found in the folder: {target_path}")
+            
     else:
         print(f"Error: The path '{target_path}' does not exist or is not a valid file/directory.")
+
+    # --- Display the collected results ---
+    display_results(final_results)
