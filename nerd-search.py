@@ -1,5 +1,6 @@
 import os
 import re
+import argparse
 from PyPDF2 import PdfReader
 
 def search_words_in_pdfs(folder_path, search_words):
@@ -70,22 +71,30 @@ def search_words_in_pdfs(folder_path, search_words):
     print("========================\n")
 
 
-# --- HOW TO USE THE SCRIPT ---
-
 if __name__ == "__main__":
-    # 1. SET THE FOLDER PATH
-    #    Replace with the actual path to your folder containing PDFs.
-    #    Example for Windows: r"C:\Users\YourUser\Documents\MyPDFs"
-    #    Example for macOS/Linux: "/Users/YourUser/Documents/MyPDFs"
-    target_folder = r"C:\path\to\your\pdfs" 
+    # --- Set up command-line argument parser ---
+    parser = argparse.ArgumentParser(
+        description="Search for specific words in all PDF files within a folder.",
+        epilog="Example: python pdf_searcher.py /path/to/your/pdfs \"Epstein\" \"Trump\" \"yacht\""
+    )
 
-    # 2. SET THE WORDS TO SEARCH FOR
-    #    Add or remove words from this list.
-    words_to_find = ["Epstein", "Trump", "yacht", "infanticide"]
+    # Add the arguments for the folder path and the words to search
+    parser.add_argument(
+        "folder", 
+        help="The path to the folder containing PDF files to search."
+    )
+    parser.add_argument(
+        "words", 
+        nargs='+',  # One or more words
+        help="One or more words to search for (space-separated). Use quotes for phrases with spaces."
+    )
 
-    # 3. RUN THE SEARCH
-    if os.path.isdir(target_folder):
-        search_words_in_pdfs(target_folder, words_to_find)
+    # Parse the arguments from the command line
+    args = parser.parse_args()
+
+    # --- RUN THE SEARCH ---
+    if os.path.isdir(args.folder):
+        search_words_in_pdfs(args.folder, args.words)
     else:
-        print(f"Error: The folder '{target_folder}' does not exist.")
-        print("Please update the 'target_folder' variable in the script.")
+        print(f"Error: The folder '{args.folder}' does not exist.")
+        print("Please provide a valid folder path.")

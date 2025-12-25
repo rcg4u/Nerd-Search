@@ -1,14 +1,17 @@
 
 
+
 # nerd-search
 
-A simple Python script for searching text within files and directories.
+A Python script for searching specific words or phrases in all PDF files within a folder.
 
 ## Features
 
-- Search for keywords or phrases in files
-- Supports searching within directories
-- Outputs matching lines and file locations
+- Search for keywords or phrases in PDF files
+- Case-insensitive search
+- Finds whole words only (not partial matches)
+- Outputs matching page numbers for each word in each PDF
+- Handles errors gracefully if a PDF cannot be read
 
 ## Usage
 
@@ -16,21 +19,22 @@ A simple Python script for searching text within files and directories.
 2. Run the script from the command line:
 
 ```bash
-python nerd-search.py [search_term] [directory]
+python nerd-search.py <folder> <word1> [word2] [word3] ...
 ```
 
-- `search_term`: The keyword or phrase to search for.
-- `directory`: (Optional) The directory to search in. Defaults to the current directory if not specified.
+- `<folder>`: The path to the folder containing PDF files to search.
+- `<word1> [word2] ...`: One or more words or phrases to search for (use quotes for phrases).
 
 ### Example
 
 ```bash
-python nerd-search.py TODO ./myproject
+python nerd-search.py ./pdfs Epstein Trump "yacht party"
 ```
 
 ## Requirements
 
 - Python 3.x
+- PyPDF2 (`pip install PyPDF2`)
 
 ## License
 
