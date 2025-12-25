@@ -63,7 +63,7 @@ MIT License
 - Improved error handling and output formatting
 - Updated usage instructions and examples
 - Modularized code for easier maintenance
-- Now displays the line(s) where the search text is found in the summary output
+- Now displays the sentence before and after where the search text is found in the summary output
 
 ---
 
