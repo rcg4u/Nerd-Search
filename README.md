@@ -1,13 +1,14 @@
 
 
 
+
 # nerd-search
 
-A Python script for searching specific words or phrases in all PDF files within a folder.
+A Python script for searching specific words or phrases in a single PDF file or all PDF files within a folder.
 
 ## Features
 
-- Search for keywords or phrases in PDF files
+- Search for keywords or phrases in PDF files (single file or entire folder)
 - Case-insensitive search
 - Finds whole words only (not partial matches)
 - Outputs matching page numbers for each word in each PDF
@@ -19,16 +20,25 @@ A Python script for searching specific words or phrases in all PDF files within 
 2. Run the script from the command line:
 
 ```bash
+# Search a folder of PDFs
 python nerd-search.py <folder> <word1> [word2] [word3] ...
+
+# Search a single PDF file
+python nerd-search.py <file.pdf> <word1> [word2] [word3] ...
 ```
 
 - `<folder>`: The path to the folder containing PDF files to search.
+- `<file.pdf>`: The path to a single PDF file to search.
 - `<word1> [word2] ...`: One or more words or phrases to search for (use quotes for phrases).
 
-### Example
+### Examples
 
 ```bash
+# Search all PDFs in a folder for multiple words
 python nerd-search.py ./pdfs Epstein Trump "yacht party"
+
+# Search a single PDF file
+python nerd-search.py ./pdfs/document.pdf "Epstein" "Trump"
 ```
 
 ## Requirements
