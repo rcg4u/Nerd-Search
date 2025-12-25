@@ -6,7 +6,7 @@ from PyPDF2 import PdfReader
 def search_in_file(file_path, search_words):
     """
     Searches for words in a PDF, first checking if it's a scanned image.
-    Returns results or a special message if the file is likely scanned.
+    Returns results with page and line numbers.
     """
     # Pre-compile the regular expressions for a significant speed boost
     search_patterns = {word: re.compile(rf'\b{re.escape(word.lower())}\b') for word in search_words}
@@ -18,10 +18,7 @@ def search_in_file(file_path, search_words):
         # --- Check if the PDF is likely a scanned image ---
         if reader.pages:
             first_page_text = reader.pages[0].extract_text() or ""
-            # A very low character count on the first page is a strong indicator
-            # of a scanned document. 50 characters is a reasonable threshold.
             if len(first_page_text.strip()) < 50:
-                # Return a special result indicating it's likely scanned
                 return {"_is_scanned_": ["This PDF appears to be a scanned image and contains no extractable text."]}
 
         # --- If not scanned, proceed with the search ---
@@ -29,13 +26,15 @@ def search_in_file(file_path, search_words):
             text = page.extract_text() or ""
             lines = text.split('\n')
             
-            for line in lines:
+            # Enumerate lines to get the line number (starting from 1)
+            for line_num, line in enumerate(lines, 1):
                 line_lower = line.lower()
                 for word, pattern in search_patterns.items():
                     if pattern.search(line_lower):
                         if word not in found_in_file:
                             found_in_file[word] = []
-                        found_in_file[word].append(line.strip())
+                        # Store a tuple of (page, line, text)
+                        found_in_file[word].append((page_num + 1, line_num, line.strip()))
                         
     except Exception as e:
         raise Exception(f"Could not read or process file. Reason: {e}")
@@ -44,7 +43,7 @@ def search_in_file(file_path, search_words):
 
 def display_results(results):
     """
-    Prints the final search results, with a special message for scanned PDFs.
+    Prints the final search results with page and line numbers.
     """
     print("\n===== SEARCH RESULTS =====")
     if not results:
@@ -59,11 +58,12 @@ def display_results(results):
                 continue # Move to the next file
 
             print(f"\n📄 Found in: {filename}")
-            for word, lines in words_found.items():
+            for word, matches in words_found.items():
                 print(f"\n   - Word: '{word}'")
-                unique_lines = sorted(list(set(lines)))
-                for line in unique_lines:
-                    print(f"     > {line}")
+                # Sort matches by page, then by line number for a clean output
+                sorted_matches = sorted(list(set(matches)), key=lambda x: (x[0], x[1]))
+                for page, line, text in sorted_matches:
+                    print(f"     > Page {page}, Line {line}: {text}")
     print("========================\n")
 
 if __name__ == "__main__":
@@ -81,14 +81,12 @@ if __name__ == "__main__":
     parser.add_argument("words", nargs='+', help="One or more words to search for (space-separated). Use quotes for phrases.")
     args = parser.parse_args()
 
-    # --- NEW: Check for correct number of arguments for a friendly error message ---
-    # If only one argument is given (e.g., just the filename), it's likely a mistake.
-    # We check if the second argument (the first word) exists.
+    # --- Check for correct number of arguments for a friendly error message ---
     if not hasattr(args, 'words') or not args.words:
         print("\n[!] Missing search words.")
         print("You must provide at least one word to search for.\n")
         parser.print_help()
-        exit() # Exit the script
+        exit()
 
     target_path = args.path
     search_words = args.words
