@@ -57,13 +57,16 @@ MIT License
 ## Change Log
 
 
+
 ### 2025-12-24
 
 - Added support for searching both a single PDF file and all PDFs in a folder
 - Improved error handling and output formatting
 - Updated usage instructions and examples
 - Modularized code for easier maintenance
-- Now displays the sentence before and after where the search text is found in the summary output
+- Now displays the exact line(s) where the search text is found in the summary output
+- Detects and reports scanned PDFs with no extractable text
+- Performance improved by pre-compiling search patterns
 
 ---
 

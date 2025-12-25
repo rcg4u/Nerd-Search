@@ -4,48 +4,65 @@ import argparse
 from PyPDF2 import PdfReader
 
 def search_in_file(file_path, search_words):
-    """Searches for words in a single PDF file and returns the results with context."""
-    search_words_lower = [word.lower() for word in search_words]
-    # Store results as: {word: [list_of_matching_lines]}
+    """
+    Searches for words in a PDF, first checking if it's a scanned image.
+    Returns results or a special message if the file is likely scanned.
+    """
+    # Pre-compile the regular expressions for a significant speed boost
+    search_patterns = {word: re.compile(rf'\b{re.escape(word.lower())}\b') for word in search_words}
     found_in_file = {}
 
     try:
         reader = PdfReader(file_path)
+        
+        # --- Check if the PDF is likely a scanned image ---
+        if reader.pages:
+            first_page_text = reader.pages[0].extract_text() or ""
+            # A very low character count on the first page is a strong indicator
+            # of a scanned document. 50 characters is a reasonable threshold.
+            if len(first_page_text.strip()) < 50:
+                # Return a special result indicating it's likely scanned
+                return {"_is_scanned_": ["This PDF appears to be a scanned image and contains no extractable text."]}
+
+        # --- If not scanned, proceed with the search ---
         for page_num, page in enumerate(reader.pages):
             text = page.extract_text() or ""
-            # Split the entire page text into individual lines
             lines = text.split('\n')
             
             for line in lines:
                 line_lower = line.lower()
-                for word in search_words_lower:
-                    # Use regular expression to find whole words
-                    if re.search(rf'\b{re.escape(word)}\b', line_lower):
+                for word, pattern in search_patterns.items():
+                    if pattern.search(line_lower):
                         if word not in found_in_file:
                             found_in_file[word] = []
-                        # Store the line, stripping extra whitespace
                         found_in_file[word].append(line.strip())
                         
     except Exception as e:
-        # We will let the calling function handle the error message
         raise Exception(f"Could not read or process file. Reason: {e}")
     
     return found_in_file
 
 def display_results(results):
-    """Prints the final search results with context lines."""
+    """
+    Prints the final search results, with a special message for scanned PDFs.
+    """
     print("\n===== SEARCH RESULTS =====")
     if not results:
         print("No matching words found.")
     else:
         for filename, words_found in results.items():
+            # --- Check for the special scanned key ---
+            if "_is_scanned_" in words_found:
+                print(f"\n🖼️ Skipped: {filename}")
+                for message in words_found["_is_scanned_"]:
+                    print(f"   > {message}")
+                continue # Move to the next file
+
             print(f"\n📄 Found in: {filename}")
             for word, lines in words_found.items():
                 print(f"\n   - Word: '{word}'")
-                # Use a set to automatically remove duplicate lines if a word appears multiple times on one line
                 unique_lines = sorted(list(set(lines)))
                 for line in unique_lines:
-                    # Indent the context line for readability
                     print(f"     > {line}")
     print("========================\n")
 
