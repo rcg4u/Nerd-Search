@@ -2,16 +2,70 @@ import os
 import re
 import argparse
 import sys
+import subprocess
+import importlib
 from PyPDF2 import PdfReader
 import colorama
 from tqdm import tqdm
 
-# --- Initialize colorama for cross-platform formatting (for console output) ---
-colorama.init(autoreset=True)
+# --- Setup and Requirement Checking ---
 
-# --- ANSI escape codes for console formatting ---
-ANSI_HIGHLIGHT_COLOR = '\033[41m'  # Red Background Highlight
-ANSI_RESET_COLOR = '\033[0m'
+REQUIRED_LIBRARIES = {
+    "PyPDF2": "PyPDF2",
+    "tqdm": "tqdm",
+    "colorama": "colorama"
+}
+
+def check_and_install_requirements():
+    """Checks for required libraries and prompts to install them if missing."""
+    missing_libs = []
+    for lib_name, pip_name in REQUIRED_LIBRARIES.items():
+        try:
+            importlib.import_module(lib_name)
+        except ImportError:
+            missing_libs.append(pip_name)
+
+    if not missing_libs:
+        print("All required libraries are installed.")
+        return True
+
+    print("[!] The following required libraries are missing:")
+    for lib in missing_libs:
+        print(f"  - {lib}")
+    
+    try:
+        choice = input("Would you like to install them now? [y/N]: ").strip().lower()
+        if choice == 'y':
+            print("Attempting to install missing libraries...")
+            for lib in missing_libs:
+                try:
+                    print(f"  -> Installing {lib}...")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", lib])
+                    print(f"  [+] {lib} installed successfully.")
+                except subprocess.CalledProcessError:
+                    print(f"  [!] Failed to install {lib}. Please install it manually with 'pip install {lib}'.")
+                    return False
+            print("\nAll libraries installed. Please run the script again.")
+            return False # Exit so the user can re-run
+        else:
+            print("Setup cancelled. Please install the missing libraries manually.")
+            return False
+    except KeyboardInterrupt:
+        print("\nSetup cancelled.")
+        return False
+
+# --- Initialize colorama for cross-platform formatting (for console output) ---
+# We do this after the setup check, in case colorama was just installed.
+try:
+    import colorama
+    colorama.init(autoreset=True)
+    ANSI_HIGHLIGHT_COLOR = '\033[41m'  # Red Background Highlight
+    ANSI_RESET_COLOR = '\033[0m'
+except ImportError:
+    # Fallback if colorama is somehow still not imported
+    ANSI_HIGHLIGHT_COLOR = ''
+    ANSI_RESET_COLOR = ''
+
 
 # --- CSS and HTML for HTML export ---
 HTML_STYLES = """
@@ -42,12 +96,23 @@ def count_total_pages(pdf_files):
     """Counts the total number of pages across all PDF files to be processed."""
     total_pages = 0
     print("Counting pages for progress bar...")
-    for file_path in tqdm(pdf_files, desc="Scanning files"):
-        try:
-            reader = PdfReader(file_path)
-            total_pages += len(reader.pages)
-        except Exception:
-            continue
+    # We need tqdm for this, so we check again just in case
+    try:
+        from tqdm import tqdm
+        for file_path in tqdm(pdf_files, desc="Scanning files"):
+            try:
+                reader = PdfReader(file_path)
+                total_pages += len(reader.pages)
+            except Exception:
+                continue
+    except ImportError:
+        print("tqdm not found, cannot show progress for this step.")
+        for file_path in pdf_files:
+            try:
+                reader = PdfReader(file_path)
+                total_pages += len(reader.pages)
+            except Exception:
+                continue
     return total_pages
 
 def find_pdf_files(directory, recursive, exclude_patterns):
@@ -132,21 +197,9 @@ def highlight_word_in_text(text, word, use_regex, for_html=False):
     
     escaped_word = re.escape(word)
     if for_html:
-        # For HTML, wrap in a span with a class
-        return re.sub(
-            rf'({escaped_word})',
-            r'<span class="highlight">\1</span>',
-            text,
-            flags=re.IGNORECASE
-        )
+        return re.sub(rf'({escaped_word})', r'<span class="highlight">\1</span>', text, flags=re.IGNORECASE)
     else:
-        # For console, use ANSI codes
-        return re.sub(
-            rf'({escaped_word})',
-            lambda match: f"{ANSI_HIGHLIGHT_COLOR}{match.group(1)}{ANSI_RESET_COLOR}",
-            text,
-            flags=re.IGNORECASE
-        )
+        return re.sub(rf'({escaped_word})', lambda match: f"{ANSI_HIGHLIGHT_COLOR}{match.group(1)}{ANSI_RESET_COLOR}", text, flags=re.IGNORECASE)
 
 def format_results_for_console(results, search_words, quiet_mode, use_regex):
     """Formats results for console output with ANSI highlighting."""
@@ -196,12 +249,11 @@ def format_results_for_html(results, search_words, quiet_mode, use_regex):
     else:
         for filename, file_data in results.items():
             html_parts.append('<div class="file-section">')
-
             if isinstance(file_data, str) or not file_data:
                 status = "error" if isinstance(file_data, str) else "skipped"
                 message = file_data if isinstance(file_data, str) else "No matches found."
                 html_parts.append(f'<p class="{status}">File: {filename} - {message}</p>')
-                html_parts.append('</div>') # Close file-section
+                html_parts.append('</div>')
                 continue
 
             html_parts.append(f'<div class="file-title">📄 {filename}</div>')
@@ -228,9 +280,9 @@ def format_results_for_html(results, search_words, quiet_mode, use_regex):
                         
                         full_context = "\n".join(context_parts)
                         html_parts.append(f'<div class="match-details">{full_context}</div>')
-                        html_parts.append('</div>') # Close match
-                    html_parts.append('</div>') # Close word-section
-            html_parts.append('</div>') # Close file-section
+                        html_parts.append('</div>')
+                    html_parts.append('</div>')
+            html_parts.append('</div>')
 
     html_parts.append('</div></body></html>')
     return "".join(html_parts)
@@ -259,6 +311,7 @@ def run_search(target_path, args):
         return "No pages found to search."
     
     final_results = {}
+    from tqdm import tqdm
     with tqdm(total=total_pages, desc="Processing Pages", unit="page") as pbar:
         for file_path in pdf_files_to_process:
             filename = os.path.basename(file_path)
@@ -277,8 +330,12 @@ if __name__ == "__main__":
                "  python nerd-search.py /path/to/file.pdf \"yacht\" --case-sensitive\n" \
                "  python nerd-search.py /path/to/logs --recursive --regex \"error \\d{4}\""
     )
-    parser.add_argument("path", help="The path to a PDF file or a folder containing PDF files.")
-    parser.add_argument("words", nargs='+', help="One or more words to search for.")
+    
+    # Special action argument
+    parser.add_argument("--setup", action='store_true', help="Check and install required libraries (PyPDF2, tqdm, colorama).")
+
+    parser.add_argument("path", nargs='?', help="The path to a PDF file or a folder containing PDF files.", default=None)
+    parser.add_argument("words", nargs='*', help="One or more words to search for.", default=None)
 
     # Search options
     parser.add_argument("--case-sensitive", action='store_true', help="Make the search case-sensitive.")
@@ -297,10 +354,23 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.words:
-        print("\n[!] Missing search words.", file=sys.stderr)
+    # Handle the --setup flag first
+    if args.setup:
+        check_and_install_requirements()
+        sys.exit(0)
+
+    # Validate normal arguments
+    if not args.path or not args.words:
+        print("\n[!] Missing path or search words.", file=sys.stderr)
         parser.print_help()
+        print("\n[!] Hint: If this is your first time, run 'python nerd-search.py --setup' to install dependencies.")
         exit()
+
+    # Check for requirements before running the main search
+    if not check_and_install_requirements():
+        # The function already printed messages and exited if installation failed or was cancelled.
+        # It returns False if the user needs to re-run, so we exit.
+        sys.exit(1)
 
     print(f"Searching: {args.path}\n")
     results_data = run_search(args.path, args)
