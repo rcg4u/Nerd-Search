@@ -73,6 +73,8 @@ HTML_STYLES = """
     .container { max-width: 900px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
     .file-section { margin-bottom: 25px; border: 1px solid #e0e0e0; padding: 15px; border-radius: 5px; }
     .file-title { font-size: 1.5em; font-weight: bold; color: #2980b9; }
+    .file-title a { color: #2980b9; text-decoration: none; }
+    .file-title a:hover { text-decoration: underline; }
     .file-summary { font-style: italic; color: #555; margin-top: 5px; }
     .word-section { margin-top: 15px; }
     .word-title { font-size: 1.2em; font-weight: bold; color: #c0392b; }
@@ -210,7 +212,7 @@ def format_results_for_console(results, search_words, quiet_mode, use_regex, fil
             # meaning it must be a dictionary with matches.
             output_lines.append(f"\n📄 Found in: {filename}")
             
-            # UPDATED: Only show the summary line if the filter is NOT active.
+            # Only show the summary line if the filter is NOT active.
             if not filter_no_results:
                 total_occurrences = sum(len(matches) for matches in file_data.values())
                 unique_words_found = len(file_data)
@@ -233,7 +235,7 @@ def format_results_for_console(results, search_words, quiet_mode, use_regex, fil
     output_lines.append("========================\n")
     return "\n".join(output_lines)
 
-def format_results_for_html(results, search_words, quiet_mode, use_regex, filter_no_results):
+def format_results_for_html(results, search_words, quiet_mode, use_regex, filter_no_results, base_url):
     """Formats results for HTML output with CSS highlighting. All tags are properly closed."""
     html_parts = [f"<html><head><title>Nerd-Search Results</title>{HTML_STYLES}</head><body>"]
     html_parts.append('<div class="container"><h1>Nerd-Search Results</h1>')
@@ -247,17 +249,23 @@ def format_results_for_html(results, search_words, quiet_mode, use_regex, filter
 
             html_parts.append('<div class="file-section">')
             if isinstance(file_data, str) or not file_data:
-                # This block handles errors or files with no matches, but we now skip them.
-                # We keep the logic for completeness but it won't be triggered with the filter.
                 status = "error" if isinstance(file_data, str) else "skipped"
                 message = file_data if isinstance(file_data, str) else "No matches found."
                 html_parts.append(f'<p class="{status}">File: {filename} - {message}</p>')
                 html_parts.append('</div>')
                 continue
 
-            html_parts.append(f'<div class="file-title">📄 {filename}</div>')
-            
-            # UPDATED: Only show the summary line if the filter is NOT active.
+            # MODIFIED: Add hyperlink to filename if base_url is provided
+            if base_url:
+                # Ensure the base URL ends with a slash to avoid issues like example.comfile.pdf
+                if not base_url.endswith('/'):
+                    base_url += '/'
+                file_url = f'{base_url}{filename}'
+                html_parts.append(f'<div class="file-title">📄 <a href="{file_url}" target="_blank">{filename}</a></div>')
+            else:
+                html_parts.append(f'<div class="file-title">📄 {filename}</div>')
+
+            # Only show the summary line if the filter is NOT active.
             if not filter_no_results:
                 total_occurrences = sum(len(matches) for matches in file_data.values())
                 unique_words_found = len(file_data)
@@ -349,6 +357,9 @@ if __name__ == "__main__":
     # MODIFIED: Added the new --filter-no-results argument
     parser.add_argument("--filter-no-results", action='store_true', help="Only show files that contain at least one match. Hide files with no results and their summary lines.")
 
+    # NEW: Added the new --base-url argument
+    parser.add_argument("--base-url", metavar="URL", help="A base URL to create hyperlinks for each file in the HTML output. E.g., https://example.com/pdfs/")
+
     parser.add_argument("-q", "--quiet", action='store_true', help="Quiet mode. Only show filenames with matches (affects console output).")
     
     args = parser.parse_args()
@@ -373,9 +384,9 @@ if __name__ == "__main__":
     results_data = run_search(args.path, args)
 
     # --- Output Handling ---
-    # MODIFIED: Pass the new argument to the formatters
     if args.html_output:
-        html_string = format_results_for_html(results_data, args.words, args.quiet, args.regex, args.filter_no_results)
+        # MODIFIED: Pass the new base_url argument to the formatter
+        html_string = format_results_for_html(results_data, args.words, args.quiet, args.regex, args.filter_no_results, args.base_url)
         try:
             with open(args.html_output, 'w', encoding='utf-8') as f:
                 f.write(html_string)
